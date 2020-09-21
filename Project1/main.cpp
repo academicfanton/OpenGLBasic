@@ -9,48 +9,256 @@
 
 using namespace std;
 
+// Constants to manage the figure speed and aspect
 #undef PI               
 #define PI 3.141592657f
+const float fSpeed = 2000.0f;
+const float fRadio = 200.0f;
+const float fSpeedTheta = 2.0f * PI / fSpeed;
+const int iLonArm1 = 140;
+const int iLonArm2 = 140;
 
-void RenderString(float fX, float fY, float fRed, float fGreen, float fBlue, void* font, const char* string);
-
+// Image related global variables
+// Changed on startup and when resized. Current width and height, and half of it (m).
 GLint windW = 300, windH = 300;
 GLint mwindW, mwindH;
-long int iTime = 0;
-long int iTimeSpeed = 2;
-float fSpeed = 2000.0f;
-float fSpeedTheta = 2.0f * PI / fSpeed;
-float fRadio = 200.0f;
-unsigned int uBufferSize = 2048;
+// Colour to render points (fades down to black). Changed when pressing space key to a random colour.
 float fRMax = 1.0f;
 float fGMax = 1.0f;
 float fBMax = 1.0f;
+
+// Time global related variables
+long unsigned int uTime = 0;
+long unsigned int uTimeSpeed = 1;
+bool bMovingToPoint = false;
+
+// Global variable: what are we rendering?
 int iDrawingType = 2;
 int iMaxDrawingType = 3;
 
-int iAxisDrawingType = 2;
+void ResetTimeAndZeroPos();
+void RenderString(const float fX, const float fY, const float fRed, const float fGreen, const float fBlue, void* font, const char* string);
 
 
-float fLissajousA = 1.0f;
-float fLissajousP = 3.0f;
-float fLissajousR = PI / 2;
-float fLissajousQ = 7.0f;
-float fLissajousDelta = PI / 2;
-
-// el BRAZO!
-int iLonArm1=110, iLonArm2=110;
-int iValidSolution = -1;
-float fBX3 = 0, fBY3 = 0;
-float fBX2 = 0, fBY2 = 0;
-
+// Position for all models: X,Y, time 
 struct sPosition
 {
     int iPosX;
     int iPosY;
-    int iTime;
+    unsigned int uTime;
 };
 
+// Buffer with calculated model positions
+unsigned int uBufferSize = 16348;
 std::list<sPosition> TotalPositions;
+
+
+// Model 1
+//  .. 8 leafs rose using a simple polar formula
+//       Theta = t
+//       R = sin(fRadiusSpeed*Theta)
+const float fRadiusSpeed_Model1 = 4.0f;
+sPosition GetPoint_Model1(const unsigned int uTime, const float fRadius);
+// -- Model variables -- 
+// Drawing type 2: Lissajous curve using polar coordinates
+//       R = fLissajousA*sin(fLissajousP*t), 
+//       Theta = fLissajousR*sin(fLissajousQ*t+fLissajousDelta)
+const float fLissajousA = 1.0f;
+const float fLissajousP = 3.0f;
+const float fLissajousR = PI;  // /2
+const float fLissajousQ = 7.0f;
+const float fLissajousDelta = PI / 2;
+sPosition GetPoint_Model2(const unsigned int uTime, const float fRadius);
+// Drawing type 3: Lissajous curve using cartesian coordinates
+//       X = sin(fLissajousP*t)
+//       Y = sin (fLissajousQ*t+fLissajousDelta)
+sPosition GetPoint_Model3(const unsigned int uTime, const float fRadius);
+
+// Valid solution for 2 arm robot positioning
+// Q1: Angle of first arm
+// Q2: Angle of second arm
+// X1,Y1 to X2,Y2: first arm coordinates
+// X2,Y2 to X3,Y3: second arm coordinates
+struct sTwoArmPosition
+{
+    float fQ1;
+    float fQ2;
+    float fX1;
+    float fY1;
+    float fX2;
+    float fY2;
+    float fX3;
+    float fY3;
+};
+// All points have 2 valid solutions. We will calculate both and then choose one.
+struct sTwoArmSolutions
+{
+    sTwoArmPosition Sol1;
+    sTwoArmPosition Sol2;
+};
+// Calculate both solutions for arms to position Pos
+sTwoArmSolutions GetTwoArmSolutionsFromPosition(const sPosition Pos, const float fArm1Length, const float fArm2Length);
+// Given current positioning (CurrentPos), calculate best solution from solutions pair
+sTwoArmPosition GetTwoArmNextBestSolution(const sTwoArmSolutions Sols, const sTwoArmPosition CurrentPos);
+// Arms variables
+sTwoArmPosition LastArmPosition;
+sTwoArmPosition NextArmPosition;
+sTwoArmPosition CurrentArmPosition;
+const float fMaxArmSpeed = PI / 1024.0f;
+float fQ1Speed=0.0f;
+float fQ2Speed = 0.0f;
+std::list<sTwoArmPosition> ArmPositions;
+// Buffer with calculated model positions
+std::list<sTwoArmPosition> ArmGranularPositions;
+
+float GetAngleDiff(const float fAngle1, const float fAngle2)
+{
+    // a = targetA - sourceA
+    // a -= 360 if a > 180
+    // a += 360 if a < -180
+    float fDiff;
+    fDiff = fAngle1 - fAngle2;
+    if (fDiff > PI)
+        fDiff -= 2.0f * PI;
+    if (fDiff < -PI)
+        fDiff += 2.0f * PI;
+    return fDiff;
+}
+
+sPosition GetPoint_Model1(const unsigned int uTime, const float fRadius)
+{
+    sPosition NewPos;
+    float fRad;
+    float fTheta;
+    // Creamos nuevo punto - rosa de 5 petalos - en polares - R=sin(4*t), O=t
+    fTheta = uTime * fSpeedTheta;
+    fRad = sinf(fRadiusSpeed_Model1 * fTheta);
+    // Convertimos de polares a XY
+    NewPos.iPosX = (int)(fRadius * fRad * cosf(fTheta));
+    NewPos.iPosY = (int)(fRadius * fRad * sinf(fTheta));
+    NewPos.uTime = uTime;
+    return NewPos;
+}
+sPosition GetPoint_Model2(const unsigned int uTime, const float fRadius)
+{
+    sPosition NewPos;
+    float fRad;
+    float fTheta;
+    // Creamos nuevo punto - Lissajous en polares -  R = A*sin(p*t), O = R*sin (q*t+d)
+    fRad = fLissajousA * sinf(fLissajousP * uTime * fSpeedTheta);
+    fTheta = fLissajousR * sinf(fLissajousQ * uTime * fSpeedTheta + fLissajousDelta);
+    // Convertimos de polares a XY
+    NewPos.iPosX = (int)(fRadio * fRad * cosf(fTheta));
+    NewPos.iPosY = (int)(fRadio * fRad * sinf(fTheta));
+    NewPos.uTime = uTime;
+    return NewPos;
+
+}
+sPosition GetPoint_Model3(const unsigned int uTime, const float fRadius)
+{
+    sPosition NewPos;
+    // Creamos nuevo punto - Lissajous en cartesianas -  x = sin(p*t) y = sin (q*t+d)
+    NewPos.iPosX = (int)(fRadio * sinf(fLissajousP * uTime * fSpeedTheta));
+    NewPos.iPosY = (int)(fRadio * sinf(fLissajousQ * uTime * fSpeedTheta + fLissajousDelta));
+    NewPos.uTime = uTime;
+    return NewPos;
+}
+
+sTwoArmSolutions GetTwoArmSolutionsFromPosition(const sPosition Pos, const float fArm1Length, const float fArm2Length)
+{
+    sTwoArmSolutions Sols;
+    float fX, fY;
+    float fR, fR2;
+
+    float fLArm2;
+    float fQ1Sol1, fQ2Sol1;
+    float fQ1Sol2, fQ2Sol2;
+    float fX1, fY1;
+    float fX2, fY2;
+    float fX3, fY3;
+    float fX2p, fY2p;
+    float fX3p, fY3p;
+
+
+    fX = (float) Pos.iPosX;
+    fY = (float) Pos.iPosY;
+    fR2 = fX * fX + fY * fY;
+    fR = sqrtf(fR2);
+    fLArm2 = fArm1Length * fArm1Length + fArm2Length * fArm2Length;
+
+    fQ2Sol1 = acosf((fR2 - fLArm2) / (2.0f * fArm1Length * fArm2Length));
+    fQ1Sol1 = atan2f(fY, fX) - atan2f(fArm2Length * sinf(fQ2Sol1), fArm1Length + fArm2Length * cosf(fQ2Sol1));
+
+    fQ2Sol2 = -acosf((fR2 - fLArm2) / (2.0f * fArm1Length * fArm2Length));
+    fQ1Sol2 = atan2f(fY, fX) + atan2f(fArm2Length * sinf(-fQ2Sol2), fArm1Length + fArm2Length * cosf(-fQ2Sol2));
+
+    //fX1 = (float)mwindW;
+    //fY1 = (float)mwindH;
+    fX1 = 0.0f;
+    fY1 = 0.0f;
+    fX2 = fX1 + iLonArm1 * cosf(fQ1Sol1);
+    fY2 = fY1 + iLonArm1 * sinf(fQ1Sol1);
+    fX3 = fX2 + iLonArm2 * cosf(fQ2Sol1 + fQ1Sol1);
+    fY3 = fY2 + iLonArm2 * sinf(fQ2Sol1 + fQ1Sol1);
+
+    fX2p = fX1 + iLonArm1 * cosf(fQ1Sol2);
+    fY2p = fY1 + iLonArm1 * sinf(fQ1Sol2);
+    fX3p = fX2p + iLonArm2 * cosf(fQ2Sol2 + fQ1Sol2);
+    fY3p = fY2p + iLonArm2 * sinf(fQ2Sol2 + fQ1Sol2);
+
+    Sols.Sol1.fQ1 = fQ1Sol1;
+    Sols.Sol1.fQ1 = fQ2Sol1;
+    Sols.Sol1.fX1 = fX1;
+    Sols.Sol1.fY1 = fY1;
+    Sols.Sol1.fX2 = fX2;
+    Sols.Sol1.fY2 = fY2;
+    Sols.Sol1.fX3 = fX3;
+    Sols.Sol1.fY3 = fY3;
+
+    Sols.Sol2.fQ1 = fQ1Sol2;
+    Sols.Sol2.fQ1 = fQ2Sol2;
+    Sols.Sol2.fX1 = fX1;
+    Sols.Sol2.fY1 = fY1;
+    Sols.Sol2.fX2 = fX2p;
+    Sols.Sol2.fY2 = fY2p;
+    Sols.Sol2.fX3 = fX3p;
+    Sols.Sol2.fY3 = fY3p;
+
+    return Sols;
+}
+
+sTwoArmPosition GetTwoArmNextBestSolution(const sTwoArmSolutions Sols, const sTwoArmPosition CurrentPos)
+{
+    sTwoArmPosition NewPos;
+    float fR2;
+    float fD1, fD2, fD;
+    float fD1p, fD2p, fDp;
+    
+    fR2 = Sols.Sol1.fX3 * Sols.Sol1.fX3 + Sols.Sol1.fY3 * Sols.Sol1.fY3;
+    if (fR2 < 2.0f)
+    {
+        NewPos = CurrentPos;
+    }
+    else
+    {
+        //fD1 = fabs(GetAngleDiff(Sols.Sol1.fQ1,CurrentPos.fQ1) * (float)iLonArm1 * (float)iLonArm1);
+        //fD2 = fabs(GetAngleDiff(Sols.Sol1.fQ2,CurrentPos.fQ2) * (float)iLonArm2 * (float)iLonArm2);
+        //fD1p = fabs(GetAngleDiff(Sols.Sol2.fQ1,CurrentPos.fQ1) * (float)iLonArm1 * (float)iLonArm1);
+        //fD2p = fabs(GetAngleDiff(Sols.Sol2.fQ2,CurrentPos.fQ2) * (float)iLonArm2 * (float)iLonArm2);
+        fD1 = (Sols.Sol1.fX2 - CurrentPos.fX2) * (Sols.Sol1.fX2 - CurrentPos.fX2) + (Sols.Sol1.fY2 - CurrentPos.fY2) * (Sols.Sol1.fY2 - CurrentPos.fY2);
+        fD2 = (Sols.Sol1.fX3 - CurrentPos.fX3) * (Sols.Sol1.fX3 - CurrentPos.fX3) + (Sols.Sol1.fY3 - CurrentPos.fY3) * (Sols.Sol1.fY3 - CurrentPos.fY3);
+        fD1p = (Sols.Sol2.fX2 - CurrentPos.fX2) * (Sols.Sol2.fX2 - CurrentPos.fX2) + (Sols.Sol2.fY2 - CurrentPos.fY2) * (Sols.Sol2.fY2 - CurrentPos.fY2);
+        fD2p = (Sols.Sol2.fX3 - CurrentPos.fX3) * (Sols.Sol2.fX3 - CurrentPos.fX3) + (Sols.Sol2.fY3 - CurrentPos.fY3) * (Sols.Sol2.fY3 - CurrentPos.fY3);
+        fD = fD1 + fD2;
+        fDp = fD1p + fD2p;
+        if (fD < fDp)
+            NewPos = Sols.Sol1;
+        else 
+            NewPos = Sols.Sol2;
+    }
+
+    return NewPos;
+}
 
 
 void MainDrawFunction()
@@ -61,12 +269,13 @@ void MainDrawFunction()
     int iRandomX, iRandomY;
     char sTexto[255];
     std::list<sPosition>::iterator ListIterator;
+    sPosition CurrentPos;
 
     glClear(GL_COLOR_BUFFER_BIT);
     iSize = TotalPositions.size();
     for (iCnt=0, ListIterator = TotalPositions.begin(); ListIterator != TotalPositions.end(); ListIterator++, iCnt++)
     {
-        sPosition CurrentPos = *ListIterator;
+        CurrentPos = *ListIterator;
 
         fRandomR = fRMax * (float) iCnt / (float) iSize;
         fRandomG = fGMax * (float) iCnt / (float) iSize;
@@ -83,198 +292,103 @@ void MainDrawFunction()
     }
     if (iCnt != 0)
     {
-        float fR,fR2;
-        float fLArm2;
-        float fX, fY;
-        float fQ1Sol1, fQ2Sol1;
-        float fQ1Sol2, fQ2Sol2;
-        float fX1, fY1;
-        float fX2, fY2;
-        float fX3, fY3;
-        float fX2p, fY2p;
-        float fX3p, fY3p;
-        float fD1, fD2, fD;
-        float fD1p, fD2p, fDp;
-
-
-        fX = (float)iRandomX - mwindW;
-        fY = (float)iRandomY - mwindH;
-        fR2 = fX * fX + fY * fY;
-        fR = sqrtf(fR2);
-        fLArm2=(float)iLonArm1*iLonArm1+(float)iLonArm2*iLonArm2;
-
-        fQ2Sol1 = acosf((fR2 - fLArm2) / (2.0f * iLonArm1 * iLonArm2));
-        fQ1Sol1 = atan2f(fY, fX) - atan2f(iLonArm2*sinf(fQ2Sol1),(float)iLonArm1+(float)iLonArm2*cosf(fQ2Sol1));
-
-        fQ2Sol2 = -acosf((fR2 - fLArm2) / (2.0f * iLonArm1 * iLonArm2));
-        fQ1Sol2 = atan2f(fY, fX) + atan2f(iLonArm2 * sinf(-fQ2Sol2), (float)iLonArm1 + (float)iLonArm2 * cosf(-fQ2Sol2));
-
-        fX1 = (float) mwindW;
-        fY1 = (float) mwindH;
-        fX2 = fX1   + iLonArm1 * cosf(fQ1Sol1);
-        fY2 = fY1   + iLonArm1 * sinf(fQ1Sol1);
-        fX3 = fX2   + iLonArm2 * cosf(fQ2Sol1 + fQ1Sol1);
-        fY3 = fY2   + iLonArm2 * sinf(fQ2Sol1 + fQ1Sol1);
-
-        fX2p = fX1  + iLonArm1 * cosf(fQ1Sol2);
-        fY2p = fY1  + iLonArm1 * sinf(fQ1Sol2);
-        fX3p = fX2p + iLonArm2 * cosf(fQ2Sol2 + fQ1Sol2);
-        fY3p = fY2p + iLonArm2 * sinf(fQ2Sol2 + fQ1Sol2);
-
-        
-        if (iValidSolution == -1)
-        {
-            iValidSolution = 1;
-            fD1 = fD2 = fD = 0.0f;
-            fD1p = fD2p = fDp = 1.0f;
-        }
-        else
-        {
-            if (fR2 < 2.0f)
-            {
-                fX2p = fX2 = fBX2 ;
-                fY2p = fY2 = fBY2 ;
-                fX3p = fX3 = fX1;
-                fY3p = fY3 = fY1;
-            }
-            else
-            {
-                fD1 = (fX2 - fBX2) * (fX2 - fBX2) + (fY2 - fBY2) * (fY2 - fBY2);
-                fD2 = (fX3 - fBX3) * (fX3 - fBX3) + (fY3 - fBY3) * (fY3 - fBY3);
-                fD = fD1 + fD2;
-
-                fD1p = (fX2p - fBX2) * (fX2p - fBX2) + (fY2p - fBY2) * (fY2p - fBY2);
-                fD2p = (fX3p - fBX3) * (fX3p - fBX3) + (fY3p - fBY3) * (fY3p - fBY3);
-                fDp = fD1p + fD2p;
-
-                if (fD < fDp)
-                    iValidSolution = 1;
-                else if (fDp < fD)
-                    iValidSolution = 0;
-            }
-        }
-        if (iValidSolution == 1)
-        {
-            fBX2 = fX2;
-            fBY2 = fY2;
-            fBX3 = fX3;
-            fBY3 = fY3;
-        }
-        else
-        {
-            fBX2 = fX2p;
-            fBY2 = fY2p;
-            fBX3 = fX3p;
-            fBY3 = fY3p;
-        }
+        sTwoArmPosition ArmPos;
+        ArmPos = LastArmPosition;
 
         glBegin(GL_LINES);
         glColor3f(0.4f, 0.4f, 0.8f);
-        glVertex2f(fX1, fY1);
-        glVertex2f(fBX2, fBY2);
+        glVertex2f(mwindW + ArmPos.fX1, mwindH + ArmPos.fY1);
+        glVertex2f(mwindW + ArmPos.fX2, mwindH + ArmPos.fY2);
         glEnd();
         glBegin(GL_LINES);
         glColor3f(0.6f, 0.6f, 0.8f);
-        glVertex2f(fBX2, fBY2);
-        glVertex2f(fBX3, fBY3);
+        glVertex2f(mwindW + ArmPos.fX2, mwindH + ArmPos.fY2);
+        glVertex2f(mwindW + ArmPos.fX3, mwindH + ArmPos.fY3);
         glEnd();
-
-
-        //glBegin(GL_LINES);
-        //glColor3f(0.8, 0.4, 0.4);
-        //glVertex2f(fX1, fY1);
-        //glVertex2f(fX2, fY2);
-        //glEnd();
-        //glBegin(GL_LINES);
-        //glColor3f(0.8, 0.6, 0.6);
-        //glVertex2f(fX2, fY2);
-        //glVertex2f(fX3, fY3);
-        //glEnd();
-
-        //glBegin(GL_LINES);
-        //glColor3f(0.8, 0.4, 0.4);
-        //glVertex2f(fX1, fY1);
-        //glVertex2f(fX2p, fY2p);
-        //glEnd();
-        //glBegin(GL_LINES);
-        //glColor3f(0.8, 0.6, 0.6);
-        //glVertex2f(fX2p, fY2p);
-        //glVertex2f(fX3p, fY3p);
-        //glEnd();
-
-        // BRAZO
-        //float h, a, b, g;
-        //float x, y;
-        //float ab, aa; 
-        //ab es el angulo del brazo y aa en del antebrazo... el segundo no lo uso.. pero puede hacer falta
-        //x = (float)iRandomX - mwindW;
-        //y = (float)iRandomY - mwindH;
-        //h = sqrt((x * x) + (y * y));
-        //a = atan2(y, x);
-        //b = acos(((float)(iLonArm1 * iLonArm1) - (float)(iLonArm2 * iLonArm2) + (h * h)) / (2 * (float)iLonArm1 * h));
-        //ab = a + b;
-        //g = acos(((float)(iLonArm1 * iLonArm1) + (float)(iLonArm2 * iLonArm2) - (h * h)) / (2 * (float)(iLonArm1 * iLonArm2)));
-        //aa = g - PI; // g-180º 
-        //
-        //x = mwindW + iLonArm1 * cos(ab);
-        //y = mwindH + iLonArm1 * sin(ab);
-        //glBegin(GL_LINES);
-        //glColor3f(0.4, 0.4, 0.8);
-        //glVertex2f((float)mwindW, (float)mwindH);
-        //glVertex2f(x, y);
-        //glEnd();
-        //glBegin(GL_LINES);
-        //glColor3f(0.6, 0.6, 0.8);
-        //glVertex2f(x, y);
-        //glVertex2f((float)iRandomX, (float)iRandomY);
-        //glEnd();
 
     }
     // Mostrar en texto la variable tiempo
-    snprintf(sTexto, 255, "%i speed: %i t:%i (%u)", iDrawingType, iTimeSpeed, iTime, uBufferSize);
+    snprintf(sTexto, 255, "%i speed: %lu t:%lu (%u)", iDrawingType, uTimeSpeed, uTime, uBufferSize);
     RenderString(10.0f, 10.0f, 1.0f, 1.0f, 1.0f, GLUT_BITMAP_TIMES_ROMAN_10, sTexto);
 }
 
-void MainIdleFunction()
+void InsertNextPoint()
 {
     sPosition NewPos;
-    float fRadius;
-    float fTheta;
+    // Get new point
     switch (iDrawingType)
     {
     case 1:
-        // Creamos nuevo punto - rosa de 5 petalos - en polares - R=sin(4*t), O=t
-        fTheta = iTime * fSpeedTheta;
-        fRadius = sinf(4.0f * fTheta);
-        // Convertimos de polares a XY
-        NewPos.iPosX = (int)(fRadio * fRadius * cosf(fTheta));
-        NewPos.iPosY = (int)(fRadio * fRadius * sinf(fTheta));
-        NewPos.iTime = iTime;
+        NewPos = GetPoint_Model1(uTime, fRadio);
         break;
     case 2:
-        // Creamos nuevo punto - Lissajous en polares -  R = A*sin(p*t), O = R*sin (q*t+d)
-        fRadius = fLissajousA * sinf(fLissajousP * iTime * fSpeedTheta);
-        fTheta = fLissajousR * sinf(fLissajousQ * iTime * fSpeedTheta + fLissajousDelta);
-        // Convertimos de polares a XY
-        NewPos.iPosX = (int)(fRadio * fRadius * cosf(fTheta));
-        NewPos.iPosY = (int)(fRadio * fRadius * sinf(fTheta));
-        NewPos.iTime = iTime;
+        NewPos = GetPoint_Model2(uTime, fRadio);
         break;
     case 3:
-        // Creamos nuevo punto - Lissajous en cartesianas -  x = sin(p*t) y = sin (q*t+d)
-        NewPos.iPosX = (int)(fRadio * sinf(fLissajousP * iTime * fSpeedTheta));
-        NewPos.iPosY = (int)(fRadio * sinf(fLissajousQ * iTime * fSpeedTheta + fLissajousDelta));
-        NewPos.iTime = iTime;
+        NewPos = GetPoint_Model3(uTime, fRadio);
         break;
     }
-
-    // Insertamos nuevo punto en la lista, eliminado si hay mas de 255
+    // Insert new point to the positions list, up to uBufferSize
     if (TotalPositions.size() >= uBufferSize)
         TotalPositions.pop_front();
     TotalPositions.push_back(NewPos);
-    // Avanzamos
-    iTime = iTime + iTimeSpeed;
+    // Calculate arms position and add to the list
+    sTwoArmSolutions Sols;
+    sTwoArmPosition NewArmPosition;
+    Sols = GetTwoArmSolutionsFromPosition(NewPos, (float)iLonArm1, (float)iLonArm2);
+    NewArmPosition = GetTwoArmNextBestSolution(Sols, LastArmPosition);
+    // Insert new point to the positions list, up to uBufferSize
+    if (ArmPositions.size() >= uBufferSize)
+        ArmPositions.pop_front();
+    ArmPositions.push_back(NewArmPosition);
+    NextArmPosition = NewArmPosition;
+    // Move time forward
+    uTime = uTime + uTimeSpeed;
 }
+
+void MovingPointNextStep()
+{
+    // If movement finished, get next point and move ahead
+    bMovingToPoint = false;
+    LastArmPosition = NextArmPosition;
+}
+
+void CalculateArmsMovement()
+{
+    float fQ1Diff;
+    float fQ2Diff;
+
+    CurrentArmPosition = LastArmPosition;
+    fQ1Diff = GetAngleDiff(CurrentArmPosition.fQ1,NextArmPosition.fQ1);
+    fQ2Diff = GetAngleDiff(CurrentArmPosition.fQ2, NextArmPosition.fQ2);
+    //*+++++++
+    const float fMaxArmSpeed = PI / 1024.0f;
+    float fQ1Speed = 0.0f;
+    float fQ2Speed = 0.0f;
+    std::list<sTwoArmPosition> ArmPositions;
+    // Buffer with calculated model positions
+    std::list<sTwoArmPosition> ArmGranularPositions;
+
+}
+void MainIdleFunction()
+{
+    if (!bMovingToPoint)
+    {
+        InsertNextPoint();
+        CalculateArmsMovement();
+        bMovingToPoint = true;
+    }
+    else
+    {
+        MovingPointNextStep();
+    }
+}
+
+// Keyboard handler:
+//  . and , to change movement pattern
+//  + and - to change movement speed (time - applies to points in the pattern - iTimeSpeed)
+//  a and z to change number of points to render
+//  Space to assign new random colour to draw the pattern
 
 void MainKeyFunction(unsigned char key, int x, int y)
 {
@@ -282,19 +396,17 @@ void MainKeyFunction(unsigned char key, int x, int y)
     {
     case ',':
         if (iDrawingType == 1) iDrawingType = iMaxDrawingType; else iDrawingType--;
-        if (iDrawingType == 3)  iLonArm1 = iLonArm2 = 140; else iLonArm1 = iLonArm2 = 110;
-        TotalPositions.clear();
+        ResetTimeAndZeroPos();
         break;
     case '.':
         if (iDrawingType == iMaxDrawingType) iDrawingType = 1; else iDrawingType++;
-        if (iDrawingType == 3)  iLonArm1 = iLonArm2 = 140; else iLonArm1 = iLonArm2 = 110;
-        TotalPositions.clear();
+        ResetTimeAndZeroPos();
         break;
     case '+':
-        iTimeSpeed++;
+        uTimeSpeed++;
         break;
     case '-':
-        if (iTimeSpeed>1) iTimeSpeed--;
+        if (uTimeSpeed>1) uTimeSpeed--;
         break;
     case 'a':
         uBufferSize++;
@@ -315,20 +427,36 @@ void MainKeyFunction(unsigned char key, int x, int y)
     }
 }
 
+void ResetTimeAndZeroPos()
+{
+    TotalPositions.clear();
+    ArmPositions.clear();
+    ArmGranularPositions.clear();
+    uTime = 0;
+    // Arms start in 0,0 position. If iLonArm1<>iLonArm2 - this would need to be adapted
+    LastArmPosition.fQ1 = 0;
+    LastArmPosition.fQ2 = PI;
+    LastArmPosition.fX1 = 0.0f;
+    LastArmPosition.fY1 = 0.0f;
+    LastArmPosition.fX2 = iLonArm1;
+    LastArmPosition.fY2 = 0.0f;
+    LastArmPosition.fX3 = 0.0f;
+    LastArmPosition.fY3 = 0.0f;
+}
+
 
 // ------------------------------------------------------------------------------------------------------------------------------------------
 //   .... No changes ....
 // ------------------------------------------------------------------------------------------------------------------------------------------
 static void Init(void)
 {
-    TotalPositions.clear();
-    iTime = 0;
     glClearColor(0.0, 0.0, 0.0, 0.0);
     glDisable(GL_DITHER);
-    glClear(GL_COLOR_BUFFER_BIT);
+    glClear(GL_COLOR_BUFFER_BIT); 
+    ResetTimeAndZeroPos();
 }
 
-void RenderString(float fX, float fY, float fRed, float fGreen, float fBlue, void* font, const char* string)
+void RenderString(const float fX, const float fY, const float fRed, const float fGreen, const float fBlue, void* font, const char* string)
 {
     glColor3f(fRed, fGreen, fBlue);
     glRasterPos2f(fX, fY);
