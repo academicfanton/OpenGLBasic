@@ -5,11 +5,11 @@
 #include <time.h>
 #include <list>
 #include "GL/freeglut.h"
+#include "AngleMath.h"
 #include "ModelPosition.h"
 #include "ModelArmPosition.h"
-#include "EquationsModel_1.h"
-#include "EquationsModel_2.h"
-#include "EquationsModel_3.h"
+#include "ModelArmMoves.h"
+#include "EquationsModels.h"
 
 using namespace std;
 
@@ -37,8 +37,7 @@ long unsigned int uTimeSpeed = 1;
 bool bMovingToPoint = false;
 
 // Global variable: what are we rendering?
-int iDrawingType = 2;
-int iMaxDrawingType = 3;
+int iDrawingType = 1;
 
 void ResetTimeAndZeroPos();
 void RenderString(const float fX, const float fY, const float fRed, const float fGreen, const float fBlue, void* font, const char* string);
@@ -47,33 +46,12 @@ void RenderString(const float fX, const float fY, const float fRed, const float 
 sTwoArmPosition LastArmPosition;
 sTwoArmPosition NextArmPosition;
 sTwoArmPosition CurrentArmPosition;
-const float fMaxArmSpeed = PI / 1024.0f;
-float fQ1Speed=0.0f;
-float fQ2Speed = 0.0f;
-// Buffer with calculated model positions
-std::list<sTwoArmPosition> ArmGranularPositions;
-
-float GetAngleDiff(const float fAngle1, const float fAngle2)
-{
-    // a = targetA - sourceA
-    // a -= 360 if a > 180
-    // a += 360 if a < -180
-    float fDiff;
-    fDiff = fAngle1 - fAngle2;
-    if (fDiff > PI)
-        fDiff -= 2.0f * PI;
-    if (fDiff < -PI)
-        fDiff += 2.0f * PI;
-    return fDiff;
-}
 
 
 
 void MainDrawFunction()
 {
     char sTexto[255];
-    sTwoArmPosition ArmPos;
-
     glClear(GL_COLOR_BUFFER_BIT);
     RenderPositionsPoints(fRMax, fGMax, fBMax, mwindW, mwindH);
     RenderArmPosition(LastArmPosition,0.6f, 0.6f, 0.8f, mwindW, mwindH);
@@ -88,27 +66,13 @@ void InsertNextPoint()
     sTwoArmSolutions Sols;
     sTwoArmPosition NewArmPosition;
     // Get new point
-    switch (iDrawingType)
-    {
-    case 1:
-        NewPos = GetPoint_Model1(uTime, fSpeedTheta, fRadio);
-        break;
-    case 2:
-        NewPos = GetPoint_Model2(uTime, fSpeedTheta, fRadio);
-        break;
-    case 3:
-        NewPos = GetPoint_Model3(uTime, fSpeedTheta, fRadio);
-        break;
-    default:
-        NewPos.iPosX = NewPos.iPosY = 0;
-        NewPos.uTime = 0;
-    }
-    // Insert new point to the positions list, up to uBufferSize
+    NewPos = Models[iDrawingType](uTime, fSpeedTheta, fRadio);
+    // Insert new point to the positions list
     InsertPositionToList(NewPos);
     // Calculate arms position and add to the list
     Sols = GetTwoArmSolutionsFromPosition(NewPos, (float)iLonArm1, (float)iLonArm2);
     NewArmPosition = GetTwoArmNextBestSolution(Sols, LastArmPosition);
-    // Insert new point to the positions list, up to uBufferSize
+    // Insert new arm point to the positions list
     InsertArmPositionToList(NewArmPosition);
     NextArmPosition = NewArmPosition;
     // Move time forward
@@ -122,23 +86,13 @@ void MovingPointNextStep()
     LastArmPosition = NextArmPosition;
 }
 
-void CalculateArmsMovement()
-{
-    float fQ1Diff;
-    float fQ2Diff;
-
-    CurrentArmPosition = LastArmPosition;
-    fQ1Diff = GetAngleDiff(CurrentArmPosition.fQ1,NextArmPosition.fQ1);
-    fQ2Diff = GetAngleDiff(CurrentArmPosition.fQ2, NextArmPosition.fQ2);
-    //*+++++++
-
-}
 void MainIdleFunction()
 {
     if (!bMovingToPoint)
     {
         InsertNextPoint();
-        CalculateArmsMovement();
+        CurrentArmPosition = LastArmPosition;
+        CalculateArmsMovement(CurrentArmPosition,NextArmPosition);
         bMovingToPoint = true;
     }
     else
@@ -157,11 +111,11 @@ void MainKeyFunction(unsigned char key, int x, int y)
     switch (key)
     {
     case ',':
-        if (iDrawingType == 1) iDrawingType = iMaxDrawingType; else iDrawingType--;
+        if (iDrawingType == 0) iDrawingType = ModelsCount-1; else iDrawingType--;
         ResetTimeAndZeroPos();
         break;
     case '.':
-        if (iDrawingType == iMaxDrawingType) iDrawingType = 1; else iDrawingType++;
+        if (iDrawingType == ModelsCount-1) iDrawingType = 0; else iDrawingType++;
         ResetTimeAndZeroPos();
         break;
     case '+':
@@ -182,7 +136,7 @@ void ResetTimeAndZeroPos()
 {
     ClearPositionList();
     ClearArmPositionList();
-    ArmGranularPositions.clear();
+    ClearArmMovesList();
     uTime = 0;
     // Arms start in 0,0 position. If iLonArm1<>iLonArm2 - this would need to be adapted
     LastArmPosition.fQ1 = 0;

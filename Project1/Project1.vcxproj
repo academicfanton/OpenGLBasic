@@ -19,14 +19,19 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="AngleMath.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="ModelArmMoves.cpp" />
     <ClCompile Include="ModelArmPosition.cpp" />
     <ClCompile Include="ModelPosition.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="AngleMath.h" />
+    <ClInclude Include="EquationsModels.h" />
     <ClInclude Include="EquationsModel_1.h" />
     <ClInclude Include="EquationsModel_2.h" />
     <ClInclude Include="EquationsModel_3.h" />
+    <ClInclude Include="ModelArmMoves.h" />
     <ClInclude Include="ModelArmPosition.h" />
     <ClInclude Include="ModelPosition.h" />
   </ItemGroup>
