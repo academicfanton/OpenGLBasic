@@ -8,6 +8,29 @@ std::list<sTwoArmPosition> ArmPositions;
 unsigned int uBufferSizeArms = 16348;
 
 
+void UpdateTwoArmPositionFromQs(sTwoArmPosition* pPosition, float fArm1Length, float fArm2Length)
+{
+    pPosition->fX1 = 0.0f;
+    pPosition->fY1 = 0.0f;
+    pPosition->fX2 = pPosition->fX1 + fArm1Length * cosf(pPosition->fQ1);
+    pPosition->fY2 = pPosition->fY1 + fArm1Length * sinf(pPosition->fQ1);
+    pPosition->fX3 = pPosition->fX2 + fArm2Length * cosf(pPosition->fQ2 + pPosition->fQ1);
+    pPosition->fY3 = pPosition->fY2 + fArm2Length * sinf(pPosition->fQ2 + pPosition->fQ1);
+}
+
+void SetStartPosition(sTwoArmPosition* pPosition, float fArm1Length, float fArm2Length)
+{
+    pPosition->fQ1 = 0.0f;
+    pPosition->fQ2 = PI;
+    pPosition->fX1 = 0.0f;
+    pPosition->fY1 = 0.0f;
+    pPosition->fX2 = fArm1Length;
+    pPosition->fY2 = 0.0f;
+    pPosition->fX3 = 0.0f;
+    pPosition->fY3 = 0.0f;
+
+}
+
 sTwoArmSolutions GetTwoArmSolutionsFromPosition(const sPosition Pos, const float fArm1Length, const float fArm2Length)
 {
     sTwoArmSolutions Sols;
@@ -17,11 +40,6 @@ sTwoArmSolutions GetTwoArmSolutionsFromPosition(const sPosition Pos, const float
     float fLArm2;
     float fQ1Sol1, fQ2Sol1;
     float fQ1Sol2, fQ2Sol2;
-    float fX1, fY1;
-    float fX2, fY2;
-    float fX3, fY3;
-    float fX2p, fY2p;
-    float fX3p, fY3p;
 
 
     fX = (float)Pos.iPosX;
@@ -36,37 +54,15 @@ sTwoArmSolutions GetTwoArmSolutionsFromPosition(const sPosition Pos, const float
     fQ2Sol2 = -acosf((fR2 - fLArm2) / (2.0f * fArm1Length * fArm2Length));
     fQ1Sol2 = atan2f(fY, fX) + atan2f(fArm2Length * sinf(-fQ2Sol2), fArm1Length + fArm2Length * cosf(-fQ2Sol2));
 
-    //fX1 = (float)mwindW;
-    //fY1 = (float)mwindH;
-    fX1 = 0.0f;
-    fY1 = 0.0f;
-    fX2 = fX1 + fArm1Length * cosf(fQ1Sol1);
-    fY2 = fY1 + fArm1Length * sinf(fQ1Sol1);
-    fX3 = fX2 + fArm2Length * cosf(fQ2Sol1 + fQ1Sol1);
-    fY3 = fY2 + fArm2Length * sinf(fQ2Sol1 + fQ1Sol1);
-
-    fX2p = fX1 + fArm1Length * cosf(fQ1Sol2);
-    fY2p = fY1 + fArm1Length * sinf(fQ1Sol2);
-    fX3p = fX2p + fArm2Length * cosf(fQ2Sol2 + fQ1Sol2);
-    fY3p = fY2p + fArm2Length * sinf(fQ2Sol2 + fQ1Sol2);
 
     Sols.Sol1.fQ1 = fQ1Sol1;
-    Sols.Sol1.fQ1 = fQ2Sol1;
-    Sols.Sol1.fX1 = fX1;
-    Sols.Sol1.fY1 = fY1;
-    Sols.Sol1.fX2 = fX2;
-    Sols.Sol1.fY2 = fY2;
-    Sols.Sol1.fX3 = fX3;
-    Sols.Sol1.fY3 = fY3;
+    Sols.Sol1.fQ2 = fQ2Sol1;
+    UpdateTwoArmPositionFromQs(&Sols.Sol1, fArm1Length, fArm2Length);
 
     Sols.Sol2.fQ1 = fQ1Sol2;
-    Sols.Sol2.fQ1 = fQ2Sol2;
-    Sols.Sol2.fX1 = fX1;
-    Sols.Sol2.fY1 = fY1;
-    Sols.Sol2.fX2 = fX2p;
-    Sols.Sol2.fY2 = fY2p;
-    Sols.Sol2.fX3 = fX3p;
-    Sols.Sol2.fY3 = fY3p;
+    Sols.Sol2.fQ2 = fQ2Sol2;
+    UpdateTwoArmPositionFromQs(&Sols.Sol2, fArm1Length, fArm2Length);
+
 
     return Sols;
 }

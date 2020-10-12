@@ -43,10 +43,10 @@ void ResetTimeAndZeroPos();
 void RenderString(const float fX, const float fY, const float fRed, const float fGreen, const float fBlue, void* font, const char* string);
 
 // Arms variables
-sTwoArmPosition LastArmPosition;
-sTwoArmPosition NextArmPosition;
-sTwoArmPosition CurrentArmPosition;
-
+//sTwoArmPosition LastArmPosition;
+//sTwoArmPosition NextArmPosition;
+//sTwoArmPosition CurrentArmPosition;
+sArmsMove ArmsPositionMove;
 
 
 void MainDrawFunction()
@@ -54,7 +54,7 @@ void MainDrawFunction()
     char sTexto[255];
     glClear(GL_COLOR_BUFFER_BIT);
     RenderPositionsPoints(fRMax, fGMax, fBMax, mwindW, mwindH);
-    RenderArmPosition(LastArmPosition,0.6f, 0.6f, 0.8f, mwindW, mwindH);
+    RenderArmPosition(ArmsPositionMove.CurrentPosition,0.6f, 0.6f, 0.8f, mwindW, mwindH);
     // Mostrar en texto la variable tiempo
     snprintf(sTexto, 255, "%i speed: %lu t:%lu", iDrawingType, uTimeSpeed, uTime);
     RenderString(10.0f, 10.0f, 1.0f, 1.0f, 1.0f, GLUT_BITMAP_TIMES_ROMAN_10, sTexto);
@@ -71,10 +71,11 @@ void InsertNextPoint()
     InsertPositionToList(NewPos);
     // Calculate arms position and add to the list
     Sols = GetTwoArmSolutionsFromPosition(NewPos, (float)iLonArm1, (float)iLonArm2);
-    NewArmPosition = GetTwoArmNextBestSolution(Sols, LastArmPosition);
+    NewArmPosition = GetTwoArmNextBestSolution(Sols, ArmsPositionMove.CurrentPosition);
     // Insert new arm point to the positions list
     InsertArmPositionToList(NewArmPosition);
-    NextArmPosition = NewArmPosition;
+    // Calculate the arms movement
+    ArmsPositionMove = CalculateArmsMovement(ArmsPositionMove.CurrentPosition, NewArmPosition, (float)iLonArm1, (float)iLonArm2);
     // Move time forward
     uTime = uTime + uTimeSpeed;
 }
@@ -82,17 +83,15 @@ void InsertNextPoint()
 void MovingPointNextStep()
 {
     // If movement finished, get next point and move ahead
-    bMovingToPoint = false;
-    LastArmPosition = NextArmPosition;
+    bMovingToPoint = AdvanceArmsMovement(&ArmsPositionMove);
 }
 
 void MainIdleFunction()
 {
     if (!bMovingToPoint)
     {
+        // Calculate the next point
         InsertNextPoint();
-        CurrentArmPosition = LastArmPosition;
-        CalculateArmsMovement(CurrentArmPosition,NextArmPosition);
         bMovingToPoint = true;
     }
     else
@@ -138,15 +137,9 @@ void ResetTimeAndZeroPos()
     ClearArmPositionList();
     ClearArmMovesList();
     uTime = 0;
+    bMovingToPoint = false;
     // Arms start in 0,0 position. If iLonArm1<>iLonArm2 - this would need to be adapted
-    LastArmPosition.fQ1 = 0;
-    LastArmPosition.fQ2 = PI;
-    LastArmPosition.fX1 = 0.0f;
-    LastArmPosition.fY1 = 0.0f;
-    LastArmPosition.fX2 = iLonArm1;
-    LastArmPosition.fY2 = 0.0f;
-    LastArmPosition.fX3 = 0.0f;
-    LastArmPosition.fY3 = 0.0f;
+    SetStartPosition(& ArmsPositionMove.CurrentPosition, (float)iLonArm1, (float)iLonArm2);
 }
 
 

@@ -3,6 +3,9 @@
 #define _MODELARMPOSITION_H_
 #include "ModelPosition.h"
 
+#undef PI               
+#define PI 3.141592657f
+
 // Valid solution for 2 arm robot positioning
 // Q1: Angle of first arm
 // Q2: Angle of second arm
@@ -29,6 +32,9 @@ struct sTwoArmSolutions
 sTwoArmSolutions GetTwoArmSolutionsFromPosition(const sPosition Pos, const float fArm1Length, const float fArm2Length);
 // Given current positioning (CurrentPos), calculate best solution from solutions pair
 sTwoArmPosition GetTwoArmNextBestSolution(const sTwoArmSolutions Sols, const sTwoArmPosition CurrentPos);
+
+void UpdateTwoArmPositionFromQs(sTwoArmPosition* pPosition, float fArm1Length, float fArm2Length);
+void SetStartPosition(sTwoArmPosition* pPosition, float fArm1Length, float fArm2Length);
 
 void ClearArmPositionList();
 void InsertArmPositionToList(const sTwoArmPosition NewArmPosition);
