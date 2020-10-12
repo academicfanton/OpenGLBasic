@@ -43,9 +43,6 @@ void ResetTimeAndZeroPos();
 void RenderString(const float fX, const float fY, const float fRed, const float fGreen, const float fBlue, void* font, const char* string);
 
 // Arms variables
-//sTwoArmPosition LastArmPosition;
-//sTwoArmPosition NextArmPosition;
-//sTwoArmPosition CurrentArmPosition;
 sArmsMove ArmsPositionMove;
 
 
@@ -53,7 +50,7 @@ void MainDrawFunction()
 {
     char sTexto[255];
     glClear(GL_COLOR_BUFFER_BIT);
-    RenderPositionsPoints(fRMax, fGMax, fBMax, mwindW, mwindH);
+    RenderPositionsPoints(fRMax, fGMax, fBMax, 1.0f, 0.0f, 0.0f, mwindW, mwindH);
     RenderArmPosition(ArmsPositionMove.CurrentPosition,0.6f, 0.6f, 0.8f, mwindW, mwindH);
     // Mostrar en texto la variable tiempo
     snprintf(sTexto, 255, "%i speed: %lu t:%lu", iDrawingType, uTimeSpeed, uTime);
@@ -68,7 +65,7 @@ void InsertNextPoint()
     // Get new point
     NewPos = Models[iDrawingType](uTime, fSpeedTheta, fRadio);
     // Insert new point to the positions list
-    InsertPositionToList(NewPos);
+    InsertCurvePositionToList(NewPos);
     // Calculate arms position and add to the list
     Sols = GetTwoArmSolutionsFromPosition(NewPos, (float)iLonArm1, (float)iLonArm2);
     NewArmPosition = GetTwoArmNextBestSolution(Sols, ArmsPositionMove.CurrentPosition);
@@ -78,6 +75,15 @@ void InsertNextPoint()
     ArmsPositionMove = CalculateArmsMovement(ArmsPositionMove.CurrentPosition, NewArmPosition, (float)iLonArm1, (float)iLonArm2);
     // Move time forward
     uTime = uTime + uTimeSpeed;
+}
+
+void InsertCurrentArmsPositionAsNextPoint()
+{
+    sPosition NewPos;
+    NewPos.iPosX = ArmsPositionMove.CurrentPosition.fX3;
+    NewPos.iPosY = ArmsPositionMove.CurrentPosition.fY3;
+    NewPos.uTime = uTime;
+    InsertGranularPositionToList(NewPos);
 }
 
 void MovingPointNextStep()
@@ -98,6 +104,7 @@ void MainIdleFunction()
     {
         MovingPointNextStep();
     }
+    InsertCurrentArmsPositionAsNextPoint();
 }
 
 // Keyboard handler:

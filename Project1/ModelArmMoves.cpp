@@ -10,6 +10,7 @@ float fQ2Speed = 0.0f;
 // Buffer with calculated model positions
 std::list<sTwoArmPosition> ArmGranularPositions;
 
+
 sArmsMove CalculateArmsMovement(const sTwoArmPosition StartPos, const sTwoArmPosition EndPos, float fLenArm1, float fLenArm2)
 {
     sArmsMove Move;

@@ -11,8 +11,9 @@ struct sPosition
 };
 
 void ClearPositionList();
-void InsertPositionToList(const sPosition NewPos);
+void InsertCurvePositionToList(const sPosition NewPos);
+void InsertGranularPositionToList(const sPosition NewPos);
 unsigned int GetPositionListMaxSize();
-void RenderPositionsPoints(float fRMax, float fGMax, float fBMax, unsigned int mwindW, unsigned int mwindH);
+void RenderPositionsPoints(float fRMax, float fGMax, float fBMax, float fRCurveMax, float fGCurveMax, float fBCurveMax, unsigned int mwindW, unsigned int mwindH);
 
 #endif
